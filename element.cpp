@@ -80,10 +80,13 @@ void ElementList::UpdateMatrix(Element* e, Matrix mat)
 {
 	Matrix m = mat;
 	m *= Matrix::Translation(e->pos.x, e->pos.y);
+	if (e->angle) {
+		m *= Matrix::Translation(e->pivot.x, e->pivot.y);
+		m *= Matrix::Rotation(e->angle);
+	}
 	m *= Matrix::Scaling(e->scale.x, e->scale.y);
 	if (e->angle) {
-		m *= Matrix::Rotation(e->angle);
-		m *= Matrix::Translation(e->pivot.x, e->pivot.y);
+		m *= Matrix::Translation(-e->pivot.x, -e->pivot.y);
 	}
 	e->mat = m;
 	Element* children[128];

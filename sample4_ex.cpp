@@ -21,6 +21,42 @@ InputData current_input, prev_input;        /* 入力データ */
 SDL_Surface* screen = NULL;                 /* 画面 */
 SDL_Surface* background_image = NULL;       /* 背景画像 */
 SDL_Surface* onpu_image = NULL;             /* 音符 */
+SDL_Surface* letters_image = NULL;          /* 文字画像 */
+
+/* (x, y)にテキスト(ただし、数字、アルファベット、空白のみ)を表示する。
+ * printf と同じような書き方ができる。
+ */
+void DrawText(int x, int y, const char* format, ...)
+{
+    int i;
+    va_list ap;
+    char buffer[256];
+
+    va_start(ap, format);
+    vsnprintf(buffer, 255, format, ap);
+    va_end(ap);
+    buffer[255] = '\0';
+    for (i = 0; buffer[i] != '\0'; ++i) {
+        SDL_Rect srcrect1, srcrect2;
+        SDL_Rect destrect1 = { x + i*10, y };
+        SDL_Rect destrect2 = { x + i*10 + 2, y + 2 };
+
+        srcrect1.w = srcrect1.h = srcrect2.w = srcrect2.h = 10;
+        if (isdigit(buffer[i])) {           /* 数字 */
+            srcrect1.x = (buffer[i] - '0') * 10;
+            srcrect1.y = 20;
+        } else if (isalpha(buffer[i])) {    /* アルファベット */
+            srcrect1.x = (toupper(buffer[i]) - 'A') * 10;
+            srcrect1.y = 0;
+        } else {                            /* それ以外は空白とみなす */
+            continue;
+        }
+        srcrect2.x = srcrect1.x;
+        srcrect2.y = srcrect1.y + 10;
+        SDL_BlitSurface(letters_image, &srcrect2, screen, &destrect2);
+        SDL_BlitSurface(letters_image, &srcrect1, screen, &destrect1);
+    }
+}
 
 double x, y;                                /* 音符の座標 */
 class Ball : public Element
@@ -29,18 +65,21 @@ protected:
 	virtual void Update()
 	{
 		pos.x = 300;
-		pos.y = 100;
+		pos.y = 300;
 
-		pivot.x = 100;
-		pivot.y = 0;
-//		angle += 2.5;
+		pivot.x = 30;
+		pivot.y = 30;
 
+#if 1
+		angle += 2.5;
+#else
 		if (current_input.left) {
 			angle -= 1.0;
 		}
 		if (current_input.right) {
 			angle += 1.0;
 		}
+#endif
 		if (current_input.up) {
 			scale.x += 0.01;
 			scale.y += 0.01;
@@ -54,12 +93,32 @@ protected:
 	virtual void Render()
 	{
 		SDL_Rect destrect = {0};
-		Point org = {0, 0};
-		org = mat * org;
-		destrect.x = mat.n13;
-		destrect.y = mat.n23;
+		Point pt;
+		pt.x = 0;
+		pt.y = 0;
+		pt = mat * pt;
+		SPG_Point pts[4];
+		pts[0].x = pt.x;
+		pts[0].y = pt.y;
+		pt.x = onpu_image->w;
+		pt.y = 0;
+		pt = mat * pt;
+		pts[1].x = pt.x;
+		pts[1].y = pt.y;
+		pt.x = onpu_image->w;
+		pt.y = onpu_image->h;
+		pt = mat * pt;
+		pts[2].x = pt.x;
+		pts[2].y = pt.y;
+		pt.x = 0;
+		pt.y = onpu_image->h;
+		pt = mat * pt;
+		pts[3].x = pt.x;
+		pts[3].y = pt.y;
+		SPG_Polygon(screen, 4, pts, 0);
+		SPG_TransformX(onpu_image, screen, angle, scale.x, scale.y, pivot.x, pivot.y, pos.x+pivot.x, pos.y+pivot.y, SPG_TBLEND);
 
-		SPG_TransformX(onpu_image, screen, angle, scale.x, scale.y, pivot.x, pivot.y, pos.x, pos.y, SPG_TBLEND);
+		DrawText(10, 10, "%f", angle);
 
 		/* 音符を描画する */
 //		SDL_BlitSurface(onpu_image, NULL, screen, &destrect);
@@ -186,6 +245,12 @@ int Initialize(void)
         SDL_Quit();
         return -1;
     }
+    letters_image = IMG_Load("letters.png");
+    if (letters_image == NULL) {
+        fprintf(stderr, "画像の読み込みに失敗しました：%s\n", SDL_GetError());
+        SDL_Quit();
+        return -1;
+    }
 	
 	elementList.Add(&b0);
 //	elementList.Add(&b1);
@@ -227,6 +292,7 @@ void Finalize(void)
 {
     SDL_FreeSurface(background_image);
     SDL_FreeSurface(onpu_image);
+    SDL_FreeSurface(letters_image);
 
     /* 終了する */
     SDL_Quit();
