@@ -463,7 +463,7 @@ SPNG_API int spng_get_option(spng_ctx *ctx, enum spng_option option, int *value)
 SPNG_API int spng_decoded_image_size(spng_ctx *ctx, int fmt, size_t *len);
 
 /* Decode */
-SPNG_API int spng_decode_image(spng_ctx *ctx, void *out, size_t len, int fmt, int flags);
+SPNG_API int spng_decode_image(spng_ctx *ctx, void *out, int pitch, int fmt, int flags);
 
 /* Progressive decode */
 SPNG_API int spng_decode_scanline(spng_ctx *ctx, void *out, size_t len);

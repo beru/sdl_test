@@ -24,7 +24,6 @@ namespace {
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
 SDL_Texture* texture = NULL;
-std::vector<char> image_data;
 
 }
 
@@ -55,14 +54,19 @@ void loadPNG(fs::path& path)
     size_t out_size;
     const int fmt = SPNG_FMT_RGBA8;
     spng_decoded_image_size(ctx, fmt, &out_size);
-    image_data.resize(out_size);
-    spng_decode_image(ctx, image_data.data(), out_size, fmt, 0);
+    if (texture) {
+        SDL_DestroyTexture(texture);
+    }
+    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, ihdr.width, ihdr.height);
+    if (texture) {
+        void* pixels = nullptr;
+        int pitch;
+        if (SDL_LockTexture(texture, nullptr, &pixels, &pitch)) {
+            spng_decode_image(ctx, pixels, pitch, fmt, 0);
+            SDL_UnlockTexture(texture);
+        }
+    }
     spng_ctx_free(ctx);
-
-    SDL_Surface* surface = SDL_CreateSurfaceFrom(ihdr.width, ihdr.height, SDL_PIXELFORMAT_ABGR8888, image_data.data(), ihdr.width * 4);
-    texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_DestroySurface(surface);
-
 }
 
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */

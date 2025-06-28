@@ -3615,7 +3615,7 @@ int spng_decode_chunks(spng_ctx *ctx)
     return read_chunks(ctx, 0);
 }
 
-int spng_decode_image(spng_ctx *ctx, void *out, size_t len, int fmt, int flags)
+int spng_decode_image(spng_ctx *ctx, void *out, int pitch, int fmt, int flags)
 {
     if(ctx == NULL) return 1;
     if(ctx->encode_only) return SPNG_ECTXTYPE;
@@ -3639,7 +3639,7 @@ int spng_decode_image(spng_ctx *ctx, void *out, size_t len, int fmt, int flags)
     {
         if(out == NULL) return 1;
         if(!ctx->image_size) return SPNG_EOVERFLOW;
-        if(len < ctx->image_size) return SPNG_EBUFSIZ;
+        //if(len < ctx->image_size) return SPNG_EBUFSIZ;
     }
 
     uint32_t bytes_read = 0;
@@ -3996,7 +3996,7 @@ int spng_decode_image(spng_ctx *ctx, void *out, size_t len, int fmt, int flags)
 
     do
     {
-        size_t ioffset = ri->row_num * ctx->image_width;
+        ptrdiff_t ioffset = ri->row_num * pitch;
 
         ret = spng_decode_row(ctx, (unsigned char*)out + ioffset, ctx->image_width);
     }while(!ret);
