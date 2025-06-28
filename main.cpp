@@ -71,9 +71,19 @@ void loadPNG(const char* path)
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 {
-    if (event->type == SDL_EVENT_KEY_DOWN ||
-        event->type == SDL_EVENT_QUIT) {
+    if (event->type == SDL_EVENT_QUIT) {
         return SDL_APP_SUCCESS;  /* end the program, reporting success to the OS. */
+    }
+    else if (event->type == SDL_EVENT_KEY_DOWN) {
+        SDL_KeyboardEvent* key_event = (SDL_KeyboardEvent*)event;
+        if (key_event->key == SDLK_F11) {
+            static bool fulscreen = false;
+            fulscreen = !fulscreen;
+            SDL_SetWindowFullscreen(window, fulscreen);
+        }
+        else if (key_event->key == SDLK_ESCAPE) {
+            return SDL_APP_SUCCESS;
+        }
     }
     else if (event->type == SDL_EVENT_DROP_FILE) {
         SDL_DropEvent* drop_event = (SDL_DropEvent*)event;
@@ -178,14 +188,7 @@ int SDL_main(int argc, char* argv[])
                 SDL_AppQuit(nullptr, res);
                 return 0;
             }
-            while (SDL_PollEvent(&event)) {
-                res = SDL_AppEvent(nullptr, &event);
-                if (res == SDL_APP_SUCCESS) {
-                    SDL_AppQuit(nullptr, res);
-                    return 0;
-                }
-            }
-            if (res == SDL_APP_CONTINUE) {
+            else if (res == SDL_APP_CONTINUE) {
                 SDL_AppIterate(nullptr);
             }
         }
