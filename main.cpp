@@ -167,18 +167,26 @@ int SDL_main(int argc, char* argv[])
     if (SDL_AppInit(nullptr, argc, argv) != SDL_APP_CONTINUE) {
         return 0;
     }
+    if (!SDL_SetRenderVSync(renderer, 1)) {
+        ;
+    }
     while (true) {
         SDL_Event event;
         if (SDL_WaitEvent(&event)) {
             auto res = SDL_AppEvent(nullptr, &event);
-            switch (res) {
-            case SDL_APP_SUCCESS:
+            if (res == SDL_APP_SUCCESS) {
                 SDL_AppQuit(nullptr, res);
                 return 0;
-                break;
-            case SDL_APP_CONTINUE:
+            }
+            while (SDL_PollEvent(&event)) {
+                res = SDL_AppEvent(nullptr, &event);
+                if (res == SDL_APP_SUCCESS) {
+                    SDL_AppQuit(nullptr, res);
+                    return 0;
+                }
+            }
+            if (res == SDL_APP_CONTINUE) {
                 SDL_AppIterate(nullptr);
-                break;
             }
         }
         else {
