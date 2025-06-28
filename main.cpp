@@ -12,12 +12,10 @@
 #define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-
-#include <filesystem>
-namespace fs = std::filesystem;
-
+#include <SDL3/SDL_iostream.h>
 #include "spng/spng.h"
-#include <io.h>
+
+#include <string_view>
 
 namespace {
 
@@ -38,17 +36,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     return SDL_APP_CONTINUE;
 }
 
-void loadPNG(fs::path& path)
+void loadPNG(const char* path)
 {
-    FILE* f = _wfopen(path.c_str(), L"rb");
-    if (!f) return;
-    const size_t len = _filelength(_fileno(f));
-    std::vector<char> buff(len);
-    fread(buff.data(), 1, len, f);
-    fclose(f);
-
+    size_t datasize;
+    void* buff = SDL_LoadFile(path, &datasize);
     spng_ctx* ctx = spng_ctx_new(0);
-    spng_set_png_buffer(ctx, buff.data(), len);
+    spng_set_png_buffer(ctx, buff, datasize);
     spng_ihdr ihdr;
     spng_get_ihdr(ctx, &ihdr);
     size_t out_size;
@@ -67,6 +60,7 @@ void loadPNG(fs::path& path)
         }
     }
     spng_ctx_free(ctx);
+    SDL_free(buff);
 }
 
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
@@ -78,9 +72,8 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
     }
     else if (event->type == SDL_EVENT_DROP_FILE) {
         SDL_DropEvent* dropEvent = (SDL_DropEvent*)event;
-        fs::path data{ dropEvent->data };
-        if (data.extension() == ".png") {
-            loadPNG(data);
+         if (std::string_view{ dropEvent->data }.ends_with(".png")) {
+            loadPNG(dropEvent->data);
         }
     }
     return SDL_APP_CONTINUE;
