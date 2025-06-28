@@ -9,7 +9,7 @@
   including commercial applications, and to alter it and redistribute it
   freely.
 */
-#define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
+//#define SDL_MAIN_USE_CALLBACKS 0  /* use the callbacks instead of main() */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_iostream.h>
@@ -22,6 +22,10 @@ namespace {
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
 SDL_Texture* texture = NULL;
+SDL_FPoint tpos;
+double tscale = 1.0;
+SDL_FPoint mousedown_pos;
+SDL_FPoint mousedown_tpos;
 
 }
 
@@ -29,7 +33,8 @@ SDL_Texture* texture = NULL;
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 {
     /* Create the window */
-    if (!SDL_CreateWindowAndRenderer("Hello World", 800, 600, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+    SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    if (!SDL_CreateWindowAndRenderer("Hello World", 800, 600, window_flags, &window, &renderer)) {
         SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
@@ -71,9 +76,37 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
         return SDL_APP_SUCCESS;  /* end the program, reporting success to the OS. */
     }
     else if (event->type == SDL_EVENT_DROP_FILE) {
-        SDL_DropEvent* dropEvent = (SDL_DropEvent*)event;
-         if (std::string_view{ dropEvent->data }.ends_with(".png")) {
-            loadPNG(dropEvent->data);
+        SDL_DropEvent* drop_event = (SDL_DropEvent*)event;
+         if (std::string_view{ drop_event->data }.ends_with(".png")) {
+            loadPNG(drop_event->data);
+        }
+    }
+    else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
+        SDL_MouseWheelEvent* wheel_event = (SDL_MouseWheelEvent*)event;
+        tscale *= (1.0 + 0.1 * wheel_event->y);
+    }
+    else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
+            SDL_MouseButtonEvent* mouse_event = (SDL_MouseButtonEvent*)event;
+            mousedown_pos.x = mouse_event->x;
+            mousedown_pos.y = mouse_event->y;
+            mousedown_tpos = tpos;
+        }
+    }
+    else if (event->type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
+            SDL_MouseButtonEvent* mouse_event = (SDL_MouseButtonEvent*)event;
+            mousedown_pos.x = mouse_event->x;
+            mousedown_pos.y = mouse_event->y;
+        }
+    }
+    else if (event->type == SDL_EVENT_MOUSE_MOTION) {
+        if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
+            SDL_MouseMotionEvent* mouse_event = (SDL_MouseMotionEvent*)event;
+            if (mouse_event->state & 1) {
+                tpos.x = mousedown_tpos.x + (mouse_event->x - mousedown_pos.x);
+                tpos.y = mousedown_tpos.y + (mouse_event->y - mousedown_pos.y);
+            }
         }
     }
     return SDL_APP_CONTINUE;
@@ -96,11 +129,25 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     /* Draw the message */
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    if (texture != nullptr) {
-        SDL_RenderTexture(renderer, texture, NULL, NULL);
-    }
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderDebugText(renderer, x, y, message);
+    if (texture != nullptr) {
+        SDL_FPoint top_left, top_right, bottom_left;
+        top_left.x = top_left.y = 0;
+        top_right.x = 100 * tscale;
+        top_right.y = 0;
+        bottom_left.x = 0;
+        bottom_left.y = 100 * tscale;
+
+        top_left.x += tpos.x;
+        top_left.y += tpos.y;
+        top_right.x += tpos.x;
+        top_right.y += tpos.y;
+        bottom_left.x += tpos.x;
+        bottom_left.y += tpos.y;
+        SDL_RenderTextureAffine(renderer, texture, NULL,
+            &top_left, &top_right, &bottom_left);
+    }
     SDL_RenderPresent(renderer);
 
     return SDL_APP_CONTINUE;
@@ -115,3 +162,28 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
     }
 }
 
+int SDL_main(int argc, char* argv[])
+{
+    if (SDL_AppInit(nullptr, argc, argv) != SDL_APP_CONTINUE) {
+        return 0;
+    }
+    while (true) {
+        SDL_Event event;
+        if (SDL_WaitEvent(&event)) {
+            auto res = SDL_AppEvent(nullptr, &event);
+            switch (res) {
+            case SDL_APP_SUCCESS:
+                SDL_AppQuit(nullptr, res);
+                return 0;
+                break;
+            case SDL_APP_CONTINUE:
+                SDL_AppIterate(nullptr);
+                break;
+            }
+        }
+        else {
+            SDL_GetError();
+        }
+    }
+    return 0;
+}
