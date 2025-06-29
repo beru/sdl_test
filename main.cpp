@@ -2,6 +2,8 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_iostream.h>
 
+#include <array>
+#include <string>
 #include <string_view>
 #include "spng/spng.h"
 
@@ -13,7 +15,8 @@ namespace {
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
-SDL_Texture* texture = NULL;
+std::array<std::string, 2> filepaths;
+std::array<SDL_Texture*, 2> textures;
 Mat4f tmat = Mat4f::Identity();
 Mat4f mousedown_tmat;
 SDL_FPoint mousedown_pos;
@@ -25,7 +28,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 {
     /* Create the window */
     SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    if (!SDL_CreateWindowAndRenderer("Hello World", 1280, 960, window_flags, &window, &renderer)) {
+    if (!SDL_CreateWindowAndRenderer("Diff Images", 1280, 640, window_flags, &window, &renderer)) {
         SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
@@ -33,7 +36,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     return SDL_APP_CONTINUE;
 }
 
-void loadPNG(const char* path)
+void loadPNG(const char* path, SDL_Texture*& texture)
 {
     size_t datasize;
     void* buff = SDL_LoadFile(path, &datasize);
@@ -48,8 +51,8 @@ void loadPNG(const char* path)
         SDL_DestroyTexture(texture);
     }
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, ihdr.width, ihdr.height);
-    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
     if (texture) {
+        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
         void* pixels = nullptr;
         int pitch;
         if (SDL_LockTexture(texture, nullptr, &pixels, &pitch)) {
@@ -81,14 +84,25 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
     else if (event->type == SDL_EVENT_DROP_FILE) {
         SDL_DropEvent* drop_event = (SDL_DropEvent*)event;
          if (std::string_view{ drop_event->data }.ends_with(".png")) {
-            loadPNG(drop_event->data);
+            int w = 0, h = 0;
+            SDL_GetRenderOutputSize(renderer, &w, &h);
+            auto idx = drop_event->x < w / 2 ? 0 : 1;
+            filepaths[idx] = drop_event->data;
+            loadPNG(drop_event->data, textures[idx]);
         }
     }
     else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
         if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
             SDL_MouseWheelEvent* wheel_event = (SDL_MouseWheelEvent*)event;
             float scale = 1.0f + 0.1f * wheel_event->y;
-            tmat = Mat4f::Scaling(scale, scale, 1.0f, wheel_event->mouse_x, wheel_event->mouse_y, 0.0f) * tmat;
+            auto x = wheel_event->mouse_x;
+            auto y = wheel_event->mouse_y;
+            int w = 0, h = 0;
+            SDL_GetRenderOutputSize(renderer, &w, &h);
+            if (x >= w / 2) {
+                x -= w / 2;
+            }
+            tmat = Mat4f::Scaling(scale, scale, 1.0f, x, y, 0.0f) * tmat;
         }
     }
     else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
@@ -122,39 +136,45 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 /* This function runs once per frame, and is the heart of the program. */
 SDL_AppResult SDL_AppIterate(void* appstate)
 {
-    const char* message = "Hello World!";
     int w = 0, h = 0;
     float x, y;
 
-    /* Center the message and scale it up */
     SDL_GetRenderOutputSize(renderer, &w, &h);
-
-    const float scale = 1.0f;
-    SDL_SetRenderScale(renderer, scale, scale);
-    x = ((w / scale) - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * SDL_strlen(message)) / 2;
-    y = ((h / scale) - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2;
-
-    /* Draw the message */
+    SDL_SetRenderScale(renderer, 1.0f, 1.0f);
+    SDL_SetRenderClipRect(renderer, nullptr);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderDebugText(renderer, x, y, message);
-    if (texture != nullptr) {
-        Vec4f vtl, vtr(texture->w, 0), vbl(0, texture->h);
+    auto draw_texture = [&](SDL_Texture* texture, const std::string& filepath, int xoffset) {
+        if (texture == nullptr) {
+            return;
+        }
+        Vec4f vtl(0, 0), vtr(texture->w, 0), vbl(0, texture->h);
         vtl = tmat * vtl;
         vtr = tmat * vtr;
         vbl = tmat * vbl;
-
         SDL_FPoint top_left, top_right, bottom_left;
-        top_left.x = vtl.x;
+        top_left.x = xoffset + vtl.x;
         top_left.y = vtl.y;
-        top_right.x = vtr.x;
+        top_right.x = xoffset + vtr.x;
         top_right.y = vtr.y;
-        bottom_left.x = vbl.x;
+        bottom_left.x = xoffset + vbl.x;
         bottom_left.y = vbl.y;
+        SDL_Rect clip_rect;
+        clip_rect.x = xoffset;
+        clip_rect.y = 0;
+        clip_rect.w = w / 2;
+        clip_rect.h = h;
+        SDL_SetRenderClipRect(renderer, &clip_rect);
         SDL_RenderTextureAffine(renderer, texture, NULL,
             &top_left, &top_right, &bottom_left);
-    }
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderDebugText(renderer, xoffset + 6, 6, filepath.c_str());
+    };
+    draw_texture(textures[0], filepaths[0], 0);
+    draw_texture(textures[1], filepaths[1], w / 2);
+    SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
+    SDL_SetRenderClipRect(renderer, nullptr);
+    SDL_RenderLine(renderer, w / 2, 0, w / 2, h);
     SDL_RenderPresent(renderer);
 
     return SDL_APP_CONTINUE;
@@ -163,9 +183,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 /* This function runs once at shutdown. */
 void SDL_AppQuit(void* appstate, SDL_AppResult result)
 {
-    if (texture != nullptr) {
-        SDL_DestroyTexture(texture);
-        texture = nullptr;
+    for (auto& texture : textures) {
+        if (texture != nullptr) {
+            SDL_DestroyTexture(texture);
+            texture = nullptr;
+        }
     }
 }
 
