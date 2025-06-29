@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 set(SOURCES
 	main.cpp
+	vector4.h
+	matrix4.h
 	spng/spng.h
 	spng/spng.c
 	miniz/miniz.h
@@ -18,7 +20,7 @@ set_target_properties(sdl_test PROPERTIES
 	CXX_STANDARD 23
 )
 
-set(SDL_DIR C:/libs/SDL3-3.2.16/)
+set(SDL_DIR D:/libs/SDL3-3.2.16/)
 
 target_include_directories(sdl_test PUBLIC
 	./

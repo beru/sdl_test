@@ -1,31 +1,22 @@
-/*
-  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
-
-  This software is provided 'as-is', without any express or implied
-  warranty.  In no event will the authors be held liable for any damages
-  arising from the use of this software.
-
-  Permission is granted to anyone to use this software for any purpose,
-  including commercial applications, and to alter it and redistribute it
-  freely.
-*/
-//#define SDL_MAIN_USE_CALLBACKS 0  /* use the callbacks instead of main() */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_iostream.h>
-#include "spng/spng.h"
 
 #include <string_view>
+#include "spng/spng.h"
+
+#include "matrix4.h"
+using Mat4f = Matrix4<float>;
+using Vec4f = Vector4<float>;
 
 namespace {
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
 SDL_Texture* texture = NULL;
-SDL_FPoint tpos;
-double tscale = 1.0;
+Mat4f tmat = Mat4f::Identity();
+Mat4f mousedown_tmat;
 SDL_FPoint mousedown_pos;
-SDL_FPoint mousedown_tpos;
 
 }
 
@@ -34,10 +25,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 {
     /* Create the window */
     SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    if (!SDL_CreateWindowAndRenderer("Hello World", 800, 600, window_flags, &window, &renderer)) {
+    if (!SDL_CreateWindowAndRenderer("Hello World", 1280, 960, window_flags, &window, &renderer)) {
         SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
+
     return SDL_APP_CONTINUE;
 }
 
@@ -56,6 +48,7 @@ void loadPNG(const char* path)
         SDL_DestroyTexture(texture);
     }
     texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, ihdr.width, ihdr.height);
+    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
     if (texture) {
         void* pixels = nullptr;
         int pitch;
@@ -92,15 +85,18 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
         }
     }
     else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
-        SDL_MouseWheelEvent* wheel_event = (SDL_MouseWheelEvent*)event;
-        tscale *= (1.0 + 0.1 * wheel_event->y);
+        if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
+            SDL_MouseWheelEvent* wheel_event = (SDL_MouseWheelEvent*)event;
+            float scale = 1.0f + 0.1f * wheel_event->y;
+            tmat = Mat4f::Scaling(scale, scale, 1.0f, wheel_event->mouse_x, wheel_event->mouse_y, 0.0f) * tmat;
+        }
     }
     else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
             SDL_MouseButtonEvent* mouse_event = (SDL_MouseButtonEvent*)event;
             mousedown_pos.x = mouse_event->x;
             mousedown_pos.y = mouse_event->y;
-            mousedown_tpos = tpos;
+            mousedown_tmat = tmat;
         }
     }
     else if (event->type == SDL_EVENT_MOUSE_BUTTON_UP) {
@@ -113,9 +109,10 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
     else if (event->type == SDL_EVENT_MOUSE_MOTION) {
         if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
             SDL_MouseMotionEvent* mouse_event = (SDL_MouseMotionEvent*)event;
-            if (mouse_event->state & 1) {
-                tpos.x = mousedown_tpos.x + (mouse_event->x - mousedown_pos.x);
-                tpos.y = mousedown_tpos.y + (mouse_event->y - mousedown_pos.y);
+            if (mouse_event->state & SDL_BUTTON_LEFT) {
+                auto tx = mouse_event->x - mousedown_pos.x;
+                auto ty = mouse_event->y - mousedown_pos.y;
+                tmat = Mat4f::Translation(tx, ty, 0.0f) * mousedown_tmat;
             }
         }
     }
@@ -128,10 +125,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     const char* message = "Hello World!";
     int w = 0, h = 0;
     float x, y;
-    const float scale = 4.0f;
 
     /* Center the message and scale it up */
     SDL_GetRenderOutputSize(renderer, &w, &h);
+
+    const float scale = 1.0f;
     SDL_SetRenderScale(renderer, scale, scale);
     x = ((w / scale) - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * SDL_strlen(message)) / 2;
     y = ((h / scale) - SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2;
@@ -142,19 +140,18 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderDebugText(renderer, x, y, message);
     if (texture != nullptr) {
-        SDL_FPoint top_left, top_right, bottom_left;
-        top_left.x = top_left.y = 0;
-        top_right.x = 100 * tscale;
-        top_right.y = 0;
-        bottom_left.x = 0;
-        bottom_left.y = 100 * tscale;
+        Vec4f vtl, vtr(texture->w, 0), vbl(0, texture->h);
+        vtl = tmat * vtl;
+        vtr = tmat * vtr;
+        vbl = tmat * vbl;
 
-        top_left.x += tpos.x;
-        top_left.y += tpos.y;
-        top_right.x += tpos.x;
-        top_right.y += tpos.y;
-        bottom_left.x += tpos.x;
-        bottom_left.y += tpos.y;
+        SDL_FPoint top_left, top_right, bottom_left;
+        top_left.x = vtl.x;
+        top_left.y = vtl.y;
+        top_right.x = vtr.x;
+        top_right.y = vtr.y;
+        bottom_left.x = vbl.x;
+        bottom_left.y = vbl.y;
         SDL_RenderTextureAffine(renderer, texture, NULL,
             &top_left, &top_right, &bottom_left);
     }
