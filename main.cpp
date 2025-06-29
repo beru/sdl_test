@@ -167,9 +167,16 @@ SDL_AppResult SDL_AppIterate(void* appstate)
         SDL_SetRenderClipRect(renderer, &clip_rect);
         SDL_RenderTextureAffine(renderer, texture, NULL,
             &top_left, &top_right, &bottom_left);
+        SDL_SetRenderClipRect(renderer, nullptr);
+        SDL_SetRenderScale(renderer, 2.0f, 2.0f);
+        float x = xoffset / 2 + 8;
+        float y = 8;
+        SDL_SetRenderDrawColor(renderer, 50, 50, 50, 255);
+        SDL_RenderDebugText(renderer, x+2, y+2, filepath.c_str());
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_RenderDebugText(renderer, xoffset + 6, 6, filepath.c_str());
-    };
+        SDL_RenderDebugText(renderer, x, y, filepath.c_str());
+        SDL_SetRenderScale(renderer, 1.0f, 1.0f);
+        };
     draw_texture(textures[0], filepaths[0], 0);
     draw_texture(textures[1], filepaths[1], w / 2);
     SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
