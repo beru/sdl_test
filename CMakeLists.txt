@@ -8,11 +8,12 @@ set(SOURCES
 	spng/spng.c
 	miniz/miniz.h
 	miniz/miniz.c
+	natural_sort.hpp
 )	
 
 project(sdl_test)
 
-add_executable(sdl_test
+add_executable(sdl_test WIN32
 	${SOURCES}
 )
 

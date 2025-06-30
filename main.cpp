@@ -1,22 +1,30 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_filesystem.h>
 
 #include <array>
 #include <string>
 #include <string_view>
-#include "spng/spng.h"
+#include <filesystem>
 
+namespace fs = std::filesystem;
+
+#include "spng/spng.h"
 #include "matrix4.h"
 using Mat4f = Matrix4<float>;
 using Vec4f = Vector4<float>;
+
+#include "natural_sort.hpp"
 
 namespace {
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
-std::array<std::string, 2> filepaths;
+std::vector<std::string> dropped_filepaths;
+std::array<std::vector<std::string>, 2> filepaths;
 std::array<SDL_Texture*, 2> textures;
+int disp_index = 0;
 Mat4f tmat = Mat4f::Identity();
 Mat4f mousedown_tmat;
 SDL_FPoint mousedown_pos;
@@ -64,34 +72,85 @@ void loadPNG(const char* path, SDL_Texture*& texture)
     SDL_free(buff);
 }
 
-/* This function runs when a new event (mouse input, keypresses, etc) occurs. */
-SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
+void loadImages()
 {
-    if (event->type == SDL_EVENT_QUIT) {
+    for (size_t i = 0; i < 2; ++i) {
+        if (filepaths[i].size()) {
+            loadPNG(filepaths[i][disp_index].c_str(), textures[i]);
+        }
+    }
+}
+
+/* This function runs when a new event (mouse input, keypresses, etc) occurs. */
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event, bool& redraw)
+{
+    switch (event->type) {
+    case SDL_EVENT_QUIT:
         return SDL_APP_SUCCESS;  /* end the program, reporting success to the OS. */
-    }
-    else if (event->type == SDL_EVENT_KEY_DOWN) {
-        SDL_KeyboardEvent* key_event = (SDL_KeyboardEvent*)event;
-        if (key_event->key == SDLK_F11) {
+    case SDL_EVENT_KEY_DOWN:
+        {
+            SDL_KeyboardEvent* key_event = (SDL_KeyboardEvent*)event;
             static bool fulscreen = false;
-            fulscreen = !fulscreen;
-            SDL_SetWindowFullscreen(window, fulscreen);
+            switch (key_event->key) {
+            case SDLK_F11:
+                fulscreen = !fulscreen;
+                SDL_SetWindowFullscreen(window, fulscreen);
+                redraw = true;
+                break;
+            case SDLK_SPACE:
+                if (disp_index < (int)filepaths[0].size() - 1) {
+                    ++disp_index;
+                    loadImages();
+                    redraw = true;
+                }
+                break;
+            case SDLK_BACKSPACE:
+                if (disp_index > 0) {
+                    --disp_index;
+                    loadImages();
+                    redraw = true;
+                }
+                break;
+            case SDLK_ESCAPE:
+                return SDL_APP_SUCCESS;
+            }
         }
-        else if (key_event->key == SDLK_ESCAPE) {
-            return SDL_APP_SUCCESS;
-        }
-    }
-    else if (event->type == SDL_EVENT_DROP_FILE) {
-        SDL_DropEvent* drop_event = (SDL_DropEvent*)event;
-         if (std::string_view{ drop_event->data }.ends_with(".png")) {
+        break;
+    case SDL_EVENT_DROP_BEGIN:
+        dropped_filepaths.clear();
+        break;
+    case SDL_EVENT_DROP_COMPLETE:
+        {
+            SDL_DropEvent* drop_event = (SDL_DropEvent*)event;
             int w = 0, h = 0;
             SDL_GetRenderOutputSize(renderer, &w, &h);
-            auto idx = drop_event->x < w / 2 ? 0 : 1;
-            filepaths[idx] = drop_event->data;
-            loadPNG(drop_event->data, textures[idx]);
+            const auto side = drop_event->x < w / 2 ? 0 : 1;
+            SI::natural::sort(dropped_filepaths);
+            filepaths[side] = dropped_filepaths;
+            disp_index = 0;
+            loadImages();
+            redraw = true;
         }
-    }
-    else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
+        break;
+    case SDL_EVENT_DROP_FILE:
+        {
+            SDL_DropEvent* drop_event = (SDL_DropEvent*)event;
+            SDL_PathInfo info;
+            const char* path = drop_event->data;
+            if (SDL_GetPathInfo(path, &info)) {
+                if (info.type == SDL_PATHTYPE_FILE) {
+                    if (std::string_view{ path }.ends_with(".png")) {
+                        dropped_filepaths.emplace_back(path);
+                    }
+                }
+                else if (info.type == SDL_PATHTYPE_DIRECTORY) {
+                    //auto& folderpath = folderpaths[side];
+                    //folderpath = 
+                }
+            }
+        }
+        break;
+    case SDL_EVENT_MOUSE_WHEEL:
         if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
             SDL_MouseWheelEvent* wheel_event = (SDL_MouseWheelEvent*)event;
             float scale = 1.0f + 0.1f * wheel_event->y;
@@ -103,32 +162,38 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
                 x -= w / 2;
             }
             tmat = Mat4f::Scaling(scale, scale, 1.0f, x, y, 0.0f) * tmat;
+            redraw = true;
         }
-    }
-    else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
             SDL_MouseButtonEvent* mouse_event = (SDL_MouseButtonEvent*)event;
             mousedown_pos.x = mouse_event->x;
             mousedown_pos.y = mouse_event->y;
             mousedown_tmat = tmat;
         }
-    }
-    else if (event->type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        break;
+    case SDL_EVENT_MOUSE_BUTTON_UP:
         if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
             SDL_MouseButtonEvent* mouse_event = (SDL_MouseButtonEvent*)event;
             mousedown_pos.x = mouse_event->x;
             mousedown_pos.y = mouse_event->y;
         }
-    }
-    else if (event->type == SDL_EVENT_MOUSE_MOTION) {
+        break;
+    case SDL_EVENT_MOUSE_MOTION:
         if (SDL_ConvertEventToRenderCoordinates(renderer, event)) {
             SDL_MouseMotionEvent* mouse_event = (SDL_MouseMotionEvent*)event;
             if (mouse_event->state & SDL_BUTTON_LEFT) {
                 auto tx = mouse_event->x - mousedown_pos.x;
                 auto ty = mouse_event->y - mousedown_pos.y;
                 tmat = Mat4f::Translation(tx, ty, 0.0f) * mousedown_tmat;
+                redraw = true;
             }
         }
+        break;
+    case SDL_EVENT_WINDOW_RESIZED:
+        redraw = true;
+        break;
     }
     return SDL_APP_CONTINUE;
 }
@@ -144,10 +209,11 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     SDL_SetRenderClipRect(renderer, nullptr);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    auto draw_texture = [&](SDL_Texture* texture, const std::string& filepath, int xoffset) {
-        if (texture == nullptr) {
+    auto draw_texture = [&](SDL_Texture* texture, const std::vector<std::string>& filepaths, int xoffset) {
+        if (texture == nullptr || filepaths.empty() || filepaths.size() <= disp_index) {
             return;
         }
+        const auto& filepath = filepaths[disp_index];
         Vec4f vtl(0, 0), vtr(texture->w, 0), vbl(0, texture->h);
         vtl = tmat * vtl;
         vtr = tmat * vtr;
@@ -209,13 +275,16 @@ int SDL_main(int argc, char* argv[])
     while (true) {
         SDL_Event event;
         if (SDL_WaitEvent(&event)) {
-            auto res = SDL_AppEvent(nullptr, &event);
+            bool redraw = false;
+            auto res = SDL_AppEvent(nullptr, &event, redraw);
             if (res == SDL_APP_SUCCESS) {
                 SDL_AppQuit(nullptr, res);
                 return 0;
             }
             else if (res == SDL_APP_CONTINUE) {
-                SDL_AppIterate(nullptr);
+                if (redraw) {
+                    SDL_AppIterate(nullptr);
+                }
             }
         }
         else {
